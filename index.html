@@ -880,6 +880,11 @@ document.getElementById('btn-export').addEventListener('click', async () => {
   } else {
     map.setView([stops[0].lat, stops[0].lng], 8, { animate: false });
   }
+  // Leaflet accumulates a CSS translate offset on .leaflet-map-pane when panning
+  // without a zoom change. html2canvas doesn't resolve it correctly, causing a
+  // westward shift. _resetView resets the pane transform to translate(0,0) and
+  // repositions all layers at their absolute pixel positions.
+  map._resetView(map.getCenter(), map.getZoom());
   await new Promise(r => setTimeout(r, 1100));
 
   const mapEl = document.getElementById('map');
