@@ -1,89 +1,91 @@
-# ZamWboys — Africa & Europe Trip Planner 🌍
+# ZamWboys
 
-An interactive trip planning map for Europe and Africa. Add cities, draw routes, and plan your adventure.
+A collaborative trip planner built as a single-page app. Add stops, draw routes, track distances, and share a live link — no account required.
 
-## Features
-
-- **Search** for any city or location (powered by OpenStreetMap)
-- **Double-click** anywhere on the map to drop a pin
-- **Ordered route** with numbered markers and connecting lines
-- **Distance estimates** between stops
-- **Drag to reorder** stops in the sidebar
-- **Share** your trip via URL — anyone with the link sees the same route
-- **Live collaboration** — multiple people can add/remove stops in real-time (requires Firebase setup)
-- **Export** — print to PDF for a saved map image
+Originally built to plan a Europe-to-Africa road trip. Works for any route, anywhere.
 
 ---
 
-## Using without setup (local-only)
+## What it does
 
-Just open `index.html` in a browser or deploy to GitHub Pages. Works immediately — routes are saved in browser local storage per trip code.
-
-> The trip code in the URL (`#abc1234`) is what separates different trips.
+- Search any city, town, or landmark (OpenStreetMap Nominatim)
+- Drop pins by double-clicking directly on the map
+- Numbered stops connected by a dashed route line
+- Haversine distance shown between each leg and in total
+- Drag to reorder stops — route updates immediately
+- Country highlighting and flag markers for visited countries
+- Share via URL — the trip code in the hash (`#abc1234`) is the unique identifier
+- Real-time collaboration via Firebase — multiple people on the same URL edit together live
+- Export to PNG — captures the map at native resolution with a metadata overlay (trip name, stops, distances, flags)
 
 ---
 
-## Setting up Firebase (for real-time collaboration)
+## Running it
 
-This lets your friends open the same URL and edit the route together live.
+Open `index.html` directly in a browser, or deploy to any static host (GitHub Pages, Netlify, etc.). No build step, no dependencies to install.
 
-### 1. Create a Firebase project
+Without Firebase configured, trips are stored in browser localStorage keyed by trip code. Everything still works — it just won't sync across devices.
+
+---
+
+## Firebase setup (real-time collaboration)
+
+Skip this if you only need single-device use.
+
+**1. Create a project**
 
 1. Go to [console.firebase.google.com](https://console.firebase.google.com)
-2. Click **Add project** → name it `zamwboys` → Create
-3. In the left panel: **Build → Realtime Database**
-4. Click **Create Database** → choose a region → **Start in test mode** → Enable
+2. Add project, name it anything, create
+3. Build > Realtime Database > Create Database
+4. Choose a region, start in test mode, enable
 
-### 2. Get your web app credentials
+**2. Get credentials**
 
-1. Go to **Project Settings** (gear icon) → **Your apps** tab
-2. Click **Add app** → choose **Web** (`</>`)
-3. Register the app → copy the `firebaseConfig` object
+1. Project Settings (gear icon) > Your apps > Add app > Web
+2. Register the app, copy the `firebaseConfig` object
 
-### 3. Paste config into index.html
+**3. Paste config into index.html**
 
-Open `index.html` and find this section near the bottom:
+Find this block near the bottom of `index.html`:
 
 ```js
 const FIREBASE_CONFIG = {
-  apiKey:            "YOUR_API_KEY",
-  authDomain:        "YOUR_PROJECT.firebaseapp.com",
-  databaseURL:       "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+  apiKey:      "YOUR_API_KEY",
+  authDomain:  "YOUR_PROJECT.firebaseapp.com",
+  databaseURL: "https://YOUR_PROJECT-default-rtdb.REGION.firebasedatabase.app",
+  projectId:   "YOUR_PROJECT",
   ...
 };
 ```
 
-Replace the placeholder values with your actual config. Save the file.
+Replace with your actual values. The `databaseURL` must match your project's region — copy it exactly from the Firebase console.
 
-### 4. Deploy to GitHub Pages
+**4. Deploy**
 
-1. Push to GitHub
-2. Go to repo **Settings → Pages**
-3. Source: `main` branch, `/ (root)`
-4. Your map is live at `https://yourusername.github.io/zamwboys/`
-
-Share the URL (including the `#tripcode`) with your friends — everyone on the same URL edits the same route in real-time.
+Push to GitHub, enable Pages under Settings > Pages (source: main branch, root). The URL including the hash (`https://yourname.github.io/zamwboys/#tripcode`) is what you share — everyone on that URL edits the same trip live.
 
 ---
 
-## How to use
+## Usage reference
 
 | Action | How |
 |--------|-----|
-| Add a stop | Type in the search bar and click a result |
-| Add by clicking | Double-click anywhere on the map |
-| Remove a stop | Click `×` on any stop card |
-| Reorder stops | Drag stop cards up/down |
+| Add a stop | Type in the search bar, click a result |
+| Add by map click | Double-click anywhere on the map |
+| Remove a stop | Click the X on a stop card |
+| Reorder stops | Drag stop cards |
 | Pan to a stop | Click the stop card |
-| Share trip | Click **Share** — copies URL to clipboard |
-| Save as image | Click **Export** → Print → Save as PDF |
+| Share | Click Share — copies the URL |
+| Export | Click Export — downloads a PNG of the map with trip metadata |
 
 ---
 
-## Tech stack
+## Stack
 
-- [Leaflet.js](https://leafletjs.com/) — map rendering
-- [CartoDB Dark Matter](https://carto.com/basemaps/) — map tiles
-- [OpenStreetMap Nominatim](https://nominatim.org/) — location search
-- [Firebase Realtime Database](https://firebase.google.com/) — collaboration (optional)
-- [SortableJS](https://sortablejs.github.io/Sortable/) — drag-and-drop
+- [Leaflet.js](https://leafletjs.com/) — map rendering and controls
+- [CARTO Voyager](https://carto.com/basemaps/) — map tiles
+- [OpenStreetMap Nominatim](https://nominatim.org/) — geocoding and reverse geocoding
+- [Firebase Realtime Database](https://firebase.google.com/) — live sync (optional)
+- [SortableJS](https://sortablejs.github.io/Sortable/) — drag and drop
+- [html2canvas](https://html2canvas.hertzen.com/) — map capture for PNG export
+- [flagcdn.com](https://flagcdn.com/) — country flag images
