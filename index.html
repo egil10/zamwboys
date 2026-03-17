@@ -651,8 +651,25 @@ function updateCountries() {
     const fl=flag(cc2, 28);
     if (!fl) return;
     try {
-      const bounds=L.geoJSON(f).getBounds();
-      const center=bounds.getCenter();
+      // For MultiPolygon countries (Norway+Svalbard, France+DOM-TOM, USA+Alaska, etc.)
+      // the full bounding box center lands in the ocean or wrong territory.
+      // Use the largest individual polygon's center instead.
+      let center;
+      const geom=f.geometry;
+      if (geom.type==='MultiPolygon') {
+        let bestCoords=null, bestArea=0;
+        geom.coordinates.forEach(poly=>{
+          const ring=poly[0];
+          const lngs=ring.map(c=>c[0]), lats=ring.map(c=>c[1]);
+          const area=(Math.max(...lngs)-Math.min(...lngs))*(Math.max(...lats)-Math.min(...lats));
+          if (area>bestArea){bestArea=area;bestCoords=ring;}
+        });
+        if (bestCoords) {
+          const lngs=bestCoords.map(c=>c[0]), lats=bestCoords.map(c=>c[1]);
+          center=L.latLng((Math.min(...lats)+Math.max(...lats))/2,(Math.min(...lngs)+Math.max(...lngs))/2);
+        }
+      }
+      if (!center) center=L.geoJSON(f).getBounds().getCenter();
       flagMarkers.push(L.marker(center,{
         icon:L.divIcon({
           className:'',
