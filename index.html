@@ -13,6 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -604,7 +605,7 @@ function clearAll() {
 const map=L.map('map',{center:[15,22],zoom:3,minZoom:2,maxZoom:18,zoomControl:false});
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
   attribution:'© <a href="https://openstreetmap.org">OpenStreetMap</a> contributors © <a href="https://carto.com">CARTO</a>',
-  subdomains:'abcd', maxZoom:19
+  subdomains:'abcd', maxZoom:19, crossOrigin: true
 }).addTo(map);
 L.control.zoom({position:'bottomright'}).addTo(map);
 
@@ -615,9 +616,10 @@ fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json')
   .catch(()=>{});
 
 // ── Country highlighting ──────────────────────────────
-function flag(cc) {
+function flag(cc, size=20) {
   if (!cc||cc.length!==2) return '';
-  return cc.toUpperCase().replace(/./g,c=>String.fromCodePoint(c.charCodeAt(0)+127397));
+  const h=Math.round(size*0.75);
+  return `<img src="https://flagcdn.com/${size}x${h}/${cc.toLowerCase()}.png" width="${size}" height="${h}" alt="${cc.toUpperCase()}" style="vertical-align:middle;border-radius:2px;display:inline-block">`;
 }
 
 function updateCountries() {
@@ -646,7 +648,7 @@ function updateCountries() {
   matching.forEach(f=>{
     const cc2=Object.entries(A2N).find(([,v])=>v===+f.id)?.[0];
     if (!cc2) return;
-    const fl=flag(cc2);
+    const fl=flag(cc2, 28);
     if (!fl) return;
     try {
       const bounds=L.geoJSON(f).getBounds();
@@ -654,8 +656,8 @@ function updateCountries() {
       flagMarkers.push(L.marker(center,{
         icon:L.divIcon({
           className:'',
-          html:`<div style="font-size:18px;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.3));cursor:default">${fl}</div>`,
-          iconSize:[22,22],iconAnchor:[11,11]
+          html:`<div style="filter:drop-shadow(0 1px 4px rgba(0,0,0,0.5));cursor:default;line-height:0">${fl}</div>`,
+          iconSize:[28,21],iconAnchor:[14,10]
         }),
         interactive:false, zIndexOffset:-200
       }).addTo(map));
@@ -865,9 +867,217 @@ document.getElementById('modal-close').addEventListener('click',()=>mbg.classLis
 mbg.addEventListener('click',e=>{if(e.target===mbg)mbg.classList.remove('open');});
 
 // ── Export ────────────────────────────────────────────
-document.getElementById('btn-export').addEventListener('click',()=>{
-  toast('In the print dialog choose "Save as PDF"','ok');
-  setTimeout(()=>window.print(),600);
+document.getElementById('btn-export').addEventListener('click', async () => {
+  if (!stops.length) { toast('Add some stops first', ''); return; }
+
+  const btn = document.getElementById('btn-export');
+  btn.disabled = true;
+  btn.style.opacity = '0.55';
+  toast('Generating map…', 'ok');
+
+  // Fit map to route bounds (no animation so tiles settle faster)
+  if (stops.length > 1 && polyline) {
+    map.fitBounds(polyline.getBounds(), { padding: [55, 55], animate: false });
+  } else {
+    map.setView([stops[0].lat, stops[0].lng], 8, { animate: false });
+  }
+  await new Promise(r => setTimeout(r, 1100)); // let tiles load
+
+  const mapEl = document.getElementById('map');
+  const CW = 1400, CH = 820;
+  const MAP_W = 880, SIDE_W = CW - MAP_W;
+  const PAD = 30;
+  const BG = '#060810', ACCENT = '#818cf8', TEXT = '#e2e8f0', SUB = '#64748b', SUB2 = '#94a3b8';
+  const STOP_COLORS = ['#f472b6','#34d399','#60a5fa','#fbbf24','#a78bfa','#fb923c','#38bdf8','#4ade80'];
+
+  const out = document.createElement('canvas');
+  out.width = CW; out.height = CH;
+  const ctx = out.getContext('2d');
+
+  // ── Background ──
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, CW, CH);
+
+  // ── Capture map ──
+  try {
+    const mc = await html2canvas(mapEl, {
+      useCORS: true, allowTaint: false, scale: 1,
+      width: mapEl.offsetWidth, height: mapEl.offsetHeight,
+      logging: false, backgroundColor: '#060810'
+    });
+    ctx.drawImage(mc, 0, 0, MAP_W, CH);
+  } catch (_) {
+    // Fallback: dark placeholder with route drawn mathematically
+    ctx.fillStyle = '#0d0f1e';
+    ctx.fillRect(0, 0, MAP_W, CH);
+    if (stops.length > 1) {
+      // Project lat/lng to canvas coords within MAP_W x CH
+      const lats = stops.map(s => s.lat), lngs = stops.map(s => s.lng);
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+      const pad = 60;
+      const proj = s => ({
+        x: pad + (s.lng - minLng) / (maxLng - minLng || 1) * (MAP_W - pad * 2),
+        y: CH - pad - (s.lat - minLat) / (maxLat - minLat || 1) * (CH - pad * 2)
+      });
+      ctx.beginPath();
+      ctx.setLineDash([8, 6]);
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth = 2.5;
+      stops.forEach((s, i) => {
+        const {x, y} = proj(s);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      ctx.setLineDash([]);
+      stops.forEach((s, i) => {
+        const {x, y} = proj(s);
+        const c = STOP_COLORS[i % STOP_COLORS.length];
+        ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2);
+        ctx.fillStyle = c; ctx.fill();
+        ctx.font = 'bold 9px Inter,sans-serif';
+        ctx.fillStyle = '#060810'; ctx.textAlign = 'center';
+        ctx.fillText(i + 1, x, y + 3.5); ctx.textAlign = 'left';
+      });
+    }
+  }
+
+  // ── Right-edge fade ──
+  const fade = ctx.createLinearGradient(MAP_W - 90, 0, MAP_W + 1, 0);
+  fade.addColorStop(0, 'rgba(6,8,16,0)');
+  fade.addColorStop(1, BG);
+  ctx.fillStyle = fade;
+  ctx.fillRect(MAP_W - 90, 0, 91, CH);
+
+  // ── Sidebar ──
+  ctx.fillStyle = BG;
+  ctx.fillRect(MAP_W, 0, SIDE_W, CH);
+
+  // Thin accent left border
+  ctx.fillStyle = 'rgba(129,140,248,0.12)';
+  ctx.fillRect(MAP_W, 0, 1, CH);
+
+  const sx = MAP_W + PAD;
+  let sy = PAD + 10;
+
+  // ZamWboys badge
+  ctx.font = '600 10px Inter,sans-serif';
+  ctx.fillStyle = ACCENT;
+  ctx.letterSpacing = '1px';
+  ctx.fillText('ZAMWBOYS', sx, sy);
+  sy += 28;
+
+  // Trip name
+  const name = tripName || 'Unnamed trip';
+  ctx.font = 'bold 21px Inter,sans-serif';
+  ctx.fillStyle = TEXT;
+  const maxNameW = SIDE_W - PAD * 2;
+  let displayName = name;
+  while (ctx.measureText(displayName).width > maxNameW && displayName.length > 1)
+    displayName = displayName.slice(0, -1);
+  if (displayName !== name) displayName = displayName.slice(0, -1) + '…';
+  ctx.fillText(displayName, sx, sy);
+  sy += 24;
+
+  // Stats row
+  let totalKm = 0;
+  for (let i = 1; i < stops.length; i++) totalKm += haversine(stops[i - 1], stops[i]);
+  const countries = new Set(stops.filter(s => s.cc).map(s => s.cc.toLowerCase())).size;
+  const kmStr = totalKm >= 1000 ? `${(totalKm / 1000).toFixed(1)}k` : totalKm.toLocaleString();
+  ctx.font = '12px Inter,sans-serif';
+  ctx.fillStyle = SUB;
+  ctx.fillText(`${stops.length} stops  ·  ${kmStr} km${countries ? `  ·  ${countries} ${countries === 1 ? 'country' : 'countries'}` : ''}`, sx, sy);
+  sy += 18;
+
+  // Separator
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(120,130,220,0.12)';
+  ctx.lineWidth = 1;
+  ctx.moveTo(sx, sy); ctx.lineTo(MAP_W + SIDE_W - PAD, sy);
+  ctx.stroke();
+  sy += 20;
+
+  // ── Stops list ──
+  const stopH = 40;
+  const maxVisible = Math.floor((CH - sy - 52) / stopH);
+  const visStops = stops.slice(0, maxVisible);
+  const hiddenCount = stops.length - visStops.length;
+
+  visStops.forEach((s, i) => {
+    const c = STOP_COLORS[i % STOP_COLORS.length];
+    const pinX = sx + 12;
+    const pinY = sy + stopH * i + 12;
+
+    // Connector line from previous pin
+    if (i > 0) {
+      ctx.beginPath();
+      ctx.setLineDash([3, 4]);
+      ctx.strokeStyle = 'rgba(120,130,220,0.22)';
+      ctx.lineWidth = 1.5;
+      ctx.moveTo(pinX, pinY - stopH + 22);
+      ctx.lineTo(pinX, pinY - 10);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Pin circle fill + ring
+    ctx.beginPath(); ctx.arc(pinX, pinY, 10, 0, Math.PI * 2);
+    ctx.fillStyle = c + '20'; ctx.fill();
+    ctx.beginPath(); ctx.arc(pinX, pinY, 10, 0, Math.PI * 2);
+    ctx.strokeStyle = c; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // Number
+    ctx.font = 'bold 9px Inter,sans-serif';
+    ctx.fillStyle = c; ctx.textAlign = 'center';
+    ctx.fillText(i + 1, pinX, pinY + 3.5); ctx.textAlign = 'left';
+
+    // Stop name
+    const stopName = s.name.length > 23 ? s.name.slice(0, 22) + '…' : s.name;
+    ctx.font = '500 13px Inter,sans-serif';
+    ctx.fillStyle = TEXT;
+    ctx.fillText(stopName, sx + 30, i > 0 ? pinY - 3 : pinY + 4);
+
+    // Distance
+    if (i > 0) {
+      const d = haversine(stops[i - 1], s);
+      ctx.font = '11px Inter,sans-serif';
+      ctx.fillStyle = SUB;
+      ctx.fillText(`${d.toLocaleString()} km`, sx + 30, pinY + 12);
+    }
+  });
+
+  sy += stopH * visStops.length;
+  if (hiddenCount > 0) {
+    ctx.font = '11px Inter,sans-serif';
+    ctx.fillStyle = SUB;
+    ctx.fillText(`+ ${hiddenCount} more stop${hiddenCount > 1 ? 's' : ''}`, sx + 10, sy + 10);
+  }
+
+  // ── Footer ──
+  const footerY = CH - 18;
+  ctx.font = 'bold 11px Inter,sans-serif';
+  ctx.fillStyle = ACCENT;
+  ctx.fillText('ZamWboys', sx, footerY);
+  ctx.font = '10px Inter,sans-serif';
+  ctx.fillStyle = SUB;
+  ctx.fillText('· zamwboys.web.app', sx + 68, footerY);
+
+  const dateStr = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  ctx.textAlign = 'right';
+  ctx.font = '10px Inter,sans-serif';
+  ctx.fillStyle = SUB2;
+  ctx.fillText(dateStr, MAP_W + SIDE_W - PAD, footerY);
+  ctx.textAlign = 'left';
+
+  // ── Download ──
+  const a = document.createElement('a');
+  a.href = out.toDataURL('image/png');
+  a.download = (tripName || 'zamwboys-trip').replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.png';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+
+  btn.disabled = false;
+  btn.style.opacity = '';
+  toast('Map saved!', 'ok');
 });
 
 // ── Clear ─────────────────────────────────────────────
